@@ -62,6 +62,43 @@ function retrieve-adoptopenjdk() {
     fi
 }
 
+function retrieve-graalvm() {
+    args=('-s' '-f')
+    if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
+        args+=('-H' "Authorization: token $GITHUB_API_TOKEN")
+    fi
+    local cache_file="${CACHE_DIR}/graalvm.json"
+    local filter='[
+.[] | select(.prerelease == false and .draft == false)
+| (.assets[].name | capture(".+-(?<jdk>java[0-9]+)-.+") | ."jdk") as $jdkv
+| {
+  release_name: ("graalvm-ce-" + $jdkv + (.tag_name | sub("vm"; "")) ),
+  binaries: [ .assets[]
+    | select(.content_type == "application/binary")
+    | select(.name | startswith("graalvm-ce"))
+    | select(.name | endswith("tar.gz"))
+    | select(.name | contains("linux-amd64") or contains("darwin-amd64"))
+    | select(.name | contains($jdkv))
+    | {
+      package: {
+        link: .browser_download_url
+      },
+      os: (if .name | contains("darwin-amd64") then "mac" else "linux" end),
+      architecture: "x64",
+      jvm_impl: "graalvm-ce",
+      heap_size: "normal"
+    }
+  ]}
+]'
+    # shellcheck disable=SC2046
+    if [[ ! -r "${cache_file}" ]] || [[  $(set -- $(${STAT}) && echo "${1}") -le $(( $(date +%s) - 3600)) ]]
+    then
+        curl "${args[@]}" -L 'https://api.github.com/repos/graalvm/graalvm-ce-builds/releases' -o "${cache_file}"
+        jq "${filter}" "${cache_file}" > "${cache_file}.temp"
+        mv "${cache_file}.temp" "${cache_file}"
+    fi
+}
+
 function retrieve-sapmachine() {
     args=('-s' '-f')
     if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
@@ -108,6 +145,9 @@ function list-all() {
     check-jq
     retrieve-adoptopenjdk
     retrieve-sapmachine
+    retrieve-graalvm
+    local graalvm="map(select(.binaries[].jvm_impl == \"graalvm-ce\")) \
+                   | map(.release_name) | unique[]"
     local hotspot="map(select(.binaries[].jvm_impl == \"hotspot\")) \
                    | map(.release_name) | unique[]"
     local openj9_normal_heap="map(select(.binaries[].heap_size == \"normal\")) \
@@ -115,7 +155,7 @@ function list-all() {
     local openj9_large_heap="map(select(.binaries[].heap_size == \"large\")) \
                              | map(.release_name + \"_large-heap\") | unique[] | select(contains(\"openj9\"))"
     # shellcheck disable=SC2046
-    echo $(all-json | jq -r "${hotspot}" ; all-json | jq -r "${openj9_normal_heap}" ; all-json | jq -r "${openj9_large_heap}")
+    echo $(all-json | jq -r "${hotspot}" ; all-json | jq -r "${openj9_normal_heap}" ; all-json | jq -r "${openj9_large_heap}" ; all-json | jq -r "${graalvm}" )
 }
 
 function list-legacy-filenames() {
@@ -135,6 +175,7 @@ function install {
 
     retrieve-adoptopenjdk
     retrieve-sapmachine
+    retrieve-graalvm
     local select_release="map(select(.release_name==\"${RELEASE}\")) | unique[] | .binaries[]"
     local select_binary="select(.os==\"${OS}\" and .architecture==\"${ARCHITECTURE}\" and .heap_size==\"${HEAP_SIZE}\")"
     local binary
@@ -150,12 +191,15 @@ function install {
         exit 1
     fi
 
-    if ! curl -LO -# -w "%{filename_effective}\n" "${checksum_link}";
+    if [ -z "${checksum_link}" ]; # not all providers have signature files
     then
-        exit 1
-    fi
+        if ! curl -LO -# -w "%{filename_effective}\n" "${checksum_link}";
+        then
+            exit 1
+        fi
 
-    ${SHA256SUM} -c "$(basename "${checksum_link}")"
+        ${SHA256SUM} -c "$(basename "${checksum_link}")"
+    fi
 
     tar -zxf "$(basename "${binary_link}")"
     dir=$(set -- "$(ls -d ./*/)" ; echo "${1}")
