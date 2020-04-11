@@ -5,6 +5,8 @@ set -Euo pipefail
 PLUGIN_HOME="$(dirname "$(dirname "${0}")")"
 CACHE_DIR="${TMPDIR:-/tmp}/asdf-java.cache"
 
+CURL_ARGS="-s -f --connect-timeout 30 --retry 5 --retry-delay 3"
+
 if [ ! -d "${CACHE_DIR}" ]
 then
     mkdir -p "${CACHE_DIR}"
@@ -58,7 +60,7 @@ function retrieve-adoptopenjdk() {
     then
         for url in "${URLS[@]}"
         do
-            curl -f -s -H "Accept: application/json" -L "${url}" -# -w "%{filename_effective}\\n" -o "${CACHE_DIR}/adopt-#1.json" > /dev/null 2>&1
+            curl "${CURL_ARGS[@]}" -H "Accept: application/json" -L "${url}" -# -w "%{filename_effective}\\n" -o "${CACHE_DIR}/adopt-#1.json" > /dev/null 2>&1
         done
         for i in "${CACHE_DIR}"/adopt-*.json
         do
@@ -71,9 +73,8 @@ function retrieve-adoptopenjdk() {
 }
 
 function retrieve-graalvm() {
-    args=('-s' '-f')
     if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
-        args+=('-H' "Authorization: token $GITHUB_API_TOKEN")
+        CURL_ARGS+=('-H' "Authorization: token $GITHUB_API_TOKEN")
     fi
     local cache_file="${CACHE_DIR}/graalvm.json"
     local filter='[
@@ -101,16 +102,15 @@ function retrieve-graalvm() {
     # shellcheck disable=SC2046
     if [[ ! -r "${cache_file}" ]] || [[  $(set -- $(${STAT}) && echo "${1}") -le $(( $(date +%s) - 3600)) ]]
     then
-        curl "${args[@]}" -L 'https://api.github.com/repos/graalvm/graalvm-ce-builds/releases' -o "${cache_file}"
+        curl "${CURL_ARGS[@]}" -L 'https://api.github.com/repos/graalvm/graalvm-ce-builds/releases' -o "${cache_file}"
         jq "${filter}" "${cache_file}" > "${cache_file}.temp"
         mv "${cache_file}.temp" "${cache_file}"
     fi
 }
 
 function retrieve-sapmachine() {
-    args=('-s' '-f')
     if [[ -n "${GITHUB_API_TOKEN:-}" ]]; then
-        args+=('-H' "Authorization: token $GITHUB_API_TOKEN")
+        CURL_ARGS+=('-H' "Authorization: token $GITHUB_API_TOKEN")
     fi
     local cache_file="${CACHE_DIR}/sapmachine.json"
     local filter='[
@@ -136,7 +136,7 @@ function retrieve-sapmachine() {
     # shellcheck disable=SC2046
     if [[ ! -r "${cache_file}" ]] || [[  $(set -- $(${STAT}) && echo "${1}") -le $(( $(date +%s) - 3600)) ]]
     then
-        curl "${args[@]}" -L 'https://api.github.com/repos/SAP/SapMachine/releases' -o "${cache_file}"
+        curl "${CURL_ARGS[@]}" -L 'https://api.github.com/repos/SAP/SapMachine/releases' -o "${cache_file}"
         jq "${filter}" "${cache_file}" > "${cache_file}.temp"
         mv "${cache_file}.temp" "${cache_file}"
     fi
@@ -194,7 +194,7 @@ function install {
     checksum_link=$(set -- "$(echo "${binary}" | jq -r ".package.checksum_link")" ; echo "${1}")
 
     cd "${TEMP_DIR}"
-    if ! curl -LO -# -w "%{filename_effective}\\n" "${binary_link}";
+    if ! curl "${CURL_ARGS[@]}" -LO -# -w "%{filename_effective}\\n" "${binary_link}";
     then
         exit 1
     fi
@@ -207,7 +207,7 @@ function install {
             echo "${checksum_text}" "$(basename "${binary_link}")" | ${SHA256SUM} -c
         fi
     else
-        if ! curl -LO -# -w "%{filename_effective}\\n" "${checksum_link}";
+        if ! curl "${CURL_ARGS[@]}" -LO -# -w "%{filename_effective}\\n" "${checksum_link}";
         then
             exit 1
         fi
