@@ -5,7 +5,7 @@ set -Euo pipefail
 PLUGIN_HOME="$(dirname "$(dirname "${0}")")"
 CACHE_DIR="${TMPDIR:-/tmp}/asdf-java.cache"
 
-CURL_ARGS="-s -f --connect-timeout 30 --retry 5 --retry-delay 3"
+CURL_ARGS=('-S' '-f' '--connect-timeout' '30' '--retry' '5' '--retry-delay' '3')
 
 if [ ! -d "${CACHE_DIR}" ]
 then
@@ -60,7 +60,7 @@ function retrieve-adoptopenjdk() {
     then
         for url in "${URLS[@]}"
         do
-            curl "${CURL_ARGS[@]}" -H "Accept: application/json" -L "${url}" -# -w "%{filename_effective}\\n" -o "${CACHE_DIR}/adopt-#1.json" > /dev/null 2>&1
+            curl -s "${CURL_ARGS[@]}" -H "Accept: application/json" -L "${url}" -# -w "%{filename_effective}\\n" -o "${CACHE_DIR}/adopt-#1.json" > /dev/null 2>&1
         done
         for i in "${CACHE_DIR}"/adopt-*.json
         do
@@ -77,6 +77,7 @@ function retrieve-graalvm() {
         CURL_ARGS+=('-H' "Authorization: token $GITHUB_API_TOKEN")
     fi
     local cache_file="${CACHE_DIR}/graalvm.json"
+    # shellcheck disable=SC2016
     local filter='[
 .[] | select(.prerelease == false and .draft == false)
 | (.assets[].name | capture(".+-(?<jdk>java[0-9]+)-.+") | ."jdk") as $jdkv
@@ -102,7 +103,7 @@ function retrieve-graalvm() {
     # shellcheck disable=SC2046
     if [[ ! -r "${cache_file}" ]] || [[  $(set -- $(${STAT}) && echo "${1}") -le $(( $(date +%s) - 3600)) ]]
     then
-        curl "${CURL_ARGS[@]}" -L 'https://api.github.com/repos/graalvm/graalvm-ce-builds/releases' -o "${cache_file}"
+        curl -s "${CURL_ARGS[@]}" -L 'https://api.github.com/repos/graalvm/graalvm-ce-builds/releases' -o "${cache_file}"
         jq "${filter}" "${cache_file}" > "${cache_file}.temp"
         mv "${cache_file}.temp" "${cache_file}"
     fi
@@ -136,7 +137,7 @@ function retrieve-sapmachine() {
     # shellcheck disable=SC2046
     if [[ ! -r "${cache_file}" ]] || [[  $(set -- $(${STAT}) && echo "${1}") -le $(( $(date +%s) - 3600)) ]]
     then
-        curl "${CURL_ARGS[@]}" -L 'https://api.github.com/repos/SAP/SapMachine/releases' -o "${cache_file}"
+        curl -s "${CURL_ARGS[@]}" -L 'https://api.github.com/repos/SAP/SapMachine/releases' -o "${cache_file}"
         jq "${filter}" "${cache_file}" > "${cache_file}.temp"
         mv "${cache_file}.temp" "${cache_file}"
     fi
