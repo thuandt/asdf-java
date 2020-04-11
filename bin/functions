@@ -199,9 +199,10 @@ function install {
         exit 1
     fi
 
-    if [ -z "${checksum_link}" ] || [ "null" == "${checksum_link}" ]; then
+    if [ -z "${checksum_link}" ] || [ "null" == "${checksum_link}" ];
+    then
         checksum_text=$(set -- "$(echo "${binary}" | jq -r ".package.checksum")" ; echo "${1}")
-        if [ -n "${checksum_text}" ]; # not all providers have signature files
+        if [ -n "${checksum_text}" ] && [ "null" != "${checksum_text}" ];
         then
             echo "${checksum_text}" "$(basename "${binary_link}")" | ${SHA256SUM} -c
         fi
@@ -213,6 +214,7 @@ function install {
 
         ${SHA256SUM} -c "$(basename "${checksum_link}")"
     fi
+
     tar -zxf "$(basename "${binary_link}")"
     dir=$(set -- "$(ls -d ./*/)" ; echo "${1}")
     cd "${dir}"
